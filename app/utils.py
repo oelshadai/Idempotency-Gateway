@@ -1,15 +1,7 @@
 import hashlib
 import json
 
-
-def hash_payload(payload: dict) -> str:
-    """
-    Creates a unique fingerprint of request body.
-    Used to detect if request data changed.
-    """
-
-    normalized = json.dumps(payload, sort_keys=True)
-
-    return hashlib.sha256(
-        normalized.encode("utf-8")
+def hash_request(data):
+    return hashlib.md5(
+        json.dumps(data, sort_keys=True).encode()
     ).hexdigest()
