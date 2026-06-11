@@ -1,8 +1,20 @@
 from flask import Blueprint, request, jsonify
-from app.store import payments, processing, request_bodies
+from datetime import datetime
+
 from app.utils import hash_request
 from app.service import process_payment
-import time
+
+from app.store import (
+    is_processing,
+    start_processing,
+    stop_processing,
+    get_payment,
+    save_payment,
+    store_request_body,
+    get_request_body
+)
+
+from app.models import PaymentRecord
 
 payment_bp = Blueprint("payments", __name__)
 
@@ -15,33 +27,47 @@ def handle_payment():
     if not key:
         return jsonify({"error": "Idempotency-Key required"}), 400
 
-    # CASE 1: already completed request
-    if key in payments:
-        return jsonify(payments[key]), 200, {"X-Cache-Hit": "true"}
+    request_hash = hash_request(data)
 
-    # CASE 2: conflict (same key, different payload)
-    if key in request_bodies and request_bodies[key] != data:
+    # 1. Cached response (idempotency hit)
+    existing = get_payment(key)
+    if existing:
+        return jsonify(existing.response), 200, {"X-Cache-Hit": "true"}
+
+    # 2. Conflict detection
+    previous_body = get_request_body(key)
+    if previous_body and previous_body != data:
         return jsonify({
             "error": "Idempotency key already used for a different request body."
         }), 409
 
-    # CASE 3: in-flight request (race condition handling)
-    while key in processing:
-        time.sleep(0.1)
+    # 3. In-flight protection (race condition handling)
+    while is_processing(key):
+        pass  # wait until first request finishes
 
-    processing[key] = True
+    start_processing(key)
 
     try:
-        # store original request body
-        request_bodies[key] = data
+        store_request_body(key, data)
 
         response = process_payment(
             amount=data.get("amount"),
             currency=data.get("currency")
         )
 
-        payments[key] = response
+        record = PaymentRecord(
+            idempotency_key=key,
+            request_hash=request_hash,
+            amount=data.get("amount"),
+            currency=data.get("currency"),
+            response=response,
+            status="success",
+            created_at=datetime.utcnow()
+        )
+
+        save_payment(key, record)
+
         return jsonify(response), 200
 
     finally:
-        processing.pop(key, None)
+        stop_processing(key)
