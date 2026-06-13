@@ -80,17 +80,17 @@ def handle_payment():
 
     request_hash = hash_request(data)
 
-    # 1. Cached response (idempotency replay)
-    existing = get_payment(key)
-    if existing:
-        return jsonify(existing.response), 200, {"X-Cache-Hit": "true"}
-
-    # 2. Conflict detection (same key, different payload)
+    # 1. Conflict detection (same key, different payload) - MUST run BEFORE cache check
     previous_body = get_request_body(key)
     if previous_body and previous_body != data:
         return jsonify({
             "error": "Idempotency key already used for a different request body."
         }), 409
+
+    # 2. Cached response (idempotency replay)
+    existing = get_payment(key)
+    if existing:
+        return jsonify(existing.response), 200, {"X-Cache-Hit": "true"}
 
     # 3. In-flight protection (BONUS FIXED)
     if is_processing(key):
