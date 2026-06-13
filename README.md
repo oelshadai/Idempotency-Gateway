@@ -6,6 +6,15 @@ This project simulates a payment gateway where a request is processed exactly on
 
 ---
 
+## 🌐 Live Demo
+
+* API Base URL: `https://idempotency-gateway-s7v1.onrender.com`
+* Swagger UI: `https://idempotency-gateway-s7v1.onrender.com/apidocs/`
+
+> Note: First request may take 30-60 seconds as Render's free tier spins down inactive services after periods of inactivity.
+
+---
+
 # Project Overview
 
 Payment systems can receive duplicate requests when clients retry after timeouts.
@@ -44,7 +53,9 @@ A[Client / E-commerce System] --> B[Idempotency Gateway API]
 
 B --> C{Check Idempotency-Key}
 
-C -->|Existing Key| D[Return Saved Response]
+C -->|Same Key Different Payload| K[409 Conflict]
+
+C -->|Existing Key Same Payload| D[Return Saved Response]
 
 D --> E[Response + X-Cache-Hit:true]
 
@@ -57,8 +68,6 @@ G --> H[Generate Response]
 H --> I[Store Payment Result]
 
 I --> J[Return Success Response]
-
-C -->|Same Key Different Payload| K[409 Conflict]
 ```
 
 ---
@@ -72,7 +81,13 @@ Client->>API: POST /process-payment
 
 API->>Store: Check Idempotency-Key
 
-alt Key already exists
+alt Key reused with different payload
+
+Store-->>API: Conflict detected
+
+API-->>Client: 409 Conflict
+
+else Key already exists, same payload
 
 Store-->>API: Saved response
 
@@ -103,6 +118,7 @@ end
 * Flask
 * Flasgger (Swagger UI)
 * In-memory storage
+* Render (Deployment)
 
 ---
 
@@ -175,23 +191,31 @@ Start the server:
 python main.py
 ```
 
-The API runs on:
+The API runs locally on:
 
 ```
 http://127.0.0.1:5000
 ```
 
+The app automatically uses the `PORT` environment variable if set (required for deployment platforms like Render), defaulting to `5000` for local development.
+
 ---
 
 # Swagger API Documentation
 
-Open:
+## Live
+
+```
+https://idempotency-gateway-s7v1.onrender.com/apidocs/
+```
+
+## Local
 
 ```
 http://127.0.0.1:5000/apidocs/
 ```
 
-Swagger UI allows testing the API directly from the browser.
+Swagger UI allows testing the API directly from the browser, including the idempotency replay and conflict detection behavior.
 
 ---
 
@@ -341,6 +365,14 @@ This prevents:
 
 ---
 
+## Conflict Detection Ordering
+
+Conflict detection is performed **before** the cached-response check.
+
+This ensures that if a previously used Idempotency-Key is sent with a different request body, the API returns a `409 Conflict` immediately — rather than incorrectly replaying a cached response for unrelated data.
+
+---
+
 ## Concurrency Handling
 
 The system tracks requests currently being processed.
@@ -384,9 +416,21 @@ The API can be tested using:
 Test scenarios:
 
 1. First payment request
-2. Duplicate request with same key
-3. Same key with different payload
-4. Concurrent requests
+2. Duplicate request with same key and same payload
+3. Same key with a different payload (expects 409 Conflict)
+4. Concurrent requests with the same key
+
+---
+
+# Deployment
+
+This application is deployed on **Render** using:
+
+* Build Command: `pip install -r requirements.txt`
+* Start Command: `python main.py`
+* Environment: Python 3
+
+The app reads the `PORT` environment variable provided by Render at runtime, defaulting to `5000` locally.
 
 ---
 
