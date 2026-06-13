@@ -21,6 +21,56 @@ payment_bp = Blueprint("payments", __name__)
 
 @payment_bp.route("/process-payment", methods=["POST"])
 def handle_payment():
+    """
+    Process a payment using an Idempotency-Key
+    ---
+    tags:
+      - Payments
+    consumes:
+      - application/json
+    parameters:
+      - in: header
+        name: Idempotency-Key
+        type: string
+        required: true
+        description: Unique key identifying this payment request
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - amount
+            - currency
+          properties:
+            amount:
+              type: number
+              example: 100
+            currency:
+              type: string
+              example: GHS
+    responses:
+      200:
+        description: Payment processed successfully (or cached response returned for duplicate request)
+        headers:
+          X-Cache-Hit:
+            type: string
+            description: "Present and set to 'true' when returning a cached/duplicate response"
+        examples:
+          application/json:
+            status: success
+            message: "Charged 100 GHS"
+      400:
+        description: Missing Idempotency-Key header
+        examples:
+          application/json:
+            error: "Idempotency-Key required"
+      409:
+        description: Idempotency key reused with a different request body
+        examples:
+          application/json:
+            error: "Idempotency key already used for a different request body."
+    """
 
     data = request.get_json()
     key = request.headers.get("Idempotency-Key")
